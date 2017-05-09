@@ -101,16 +101,22 @@ def get_args():
                               + '"auth_service,username,passwd"'
                               + ' lines.'))
     parser.add_argument('-bh', '--beehive',
-                        help=('Use beehive configuration for multiple ' +
-                              'accounts, one account per hex.  Make sure ' +
-                              'to keep -st under 5, and -w under the total ' +
-                              'amount of accounts available.'),
-                        action='store_true', default=False)
+                        help=('Number of leaps desired for beehive setup.' +
+                              'Example: -bh 1 = 7 hexes | -bh 2 = 19 hexes.' +
+                              'Default value is 0 (disabled).'),
+                        type=int, default=0)
     parser.add_argument('-wph', '--workers-per-hive',
-                        help=('Only referenced when using --beehive. Sets ' +
-                              'number of workers per hive. Default value ' +
-                              'is 1.'),
-                        type=int, default=1)
+                        help=('Only referenced when using --beehive. Forces ' +
+                              'the number of workers per hive.' +
+                              'Default value is 0.'),
+                        type=int, default=0)
+    parser.add_argument('-bhw', '--beehive-workers',
+                        help=('Only referenced when using --beehive. Lets ' +
+                              'you disable hives individually or force a ' +
+                              'specific number of workers. Format is a list ' +
+                              'of pairs: <hive index>:<worker count> e.g. ' +
+                              '[1:0, 3:0, 4:5]'),
+                        action='append', default=[])
     parser.add_argument('-l', '--location', type=parse_unicode,
                         help='Location, can be an address or coordinates.')
     # Default based on the average elevation of cities around the world.
@@ -169,6 +175,13 @@ def get_args():
                         help=('Time delay between encounter pokemon ' +
                               'in scan threads.'),
                         type=float, default=1)
+    parser.add_argument('-ignf', '--ignorelist-file',
+                        default='', help='File containing a list of '
+                        'Pokemon IDs to ignore. Pokemon will ' +
+                        'not be added to DB, not sent to ' +
+                        'webhooks, and not encountered. ' +
+                        'Will still be used to ' +
+                        'determine spawnpoints. One line per ID.')
     parser.add_argument('-encwf', '--enc-whitelist-file',
                         default='', help='File containing a list of '
                         'Pokemon IDs or names to encounter for'
@@ -727,6 +740,11 @@ def get_args():
                                       args.webhook_blacklist]
             args.webhook_whitelist = [int(i) for i in
                                       args.webhook_whitelist]
+
+        if args.ignorelist_file:
+            with open(args.ignorelist_file) as f:
+                args.ignorelist = read_pokemon_ids_from_file(f)
+
         # Decide which scanning mode to use.
         if args.spawnpoint_scanning:
             args.scheduler = 'SpawnScan'
