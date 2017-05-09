@@ -26,6 +26,24 @@ def parse_unicode(bytestring):
     return decoded_string
 
 
+def read_pokemon_ids_from_file(f):
+    pokemon_ids = set()
+    for name in f:
+        name = name.strip()
+        # Lines starting with # or - mean: skip this Pokemon
+        if name[0] in ('#', '-'):
+            continue
+        try:
+            # Pokemon can be given as Pokedex ID
+            pid = int(name)
+        except ValueError:
+            # Perform the usual name -> ID lookup
+            pid = get_pokemon_id(unicode(name, 'utf-8'))
+        if pid and not pid == -1:
+            pokemon_ids.add(pid)
+    return sorted(pokemon_ids)
+
+
 def memoize(function):
     memo = {}
 
@@ -157,6 +175,13 @@ def get_args():
                         help=('Time delay between encounter pokemon ' +
                               'in scan threads.'),
                         type=float, default=1)
+    parser.add_argument('-ignf', '--ignorelist-file',
+                        default='', help='File containing a list of '
+                        'Pokemon IDs to ignore. Pokemon will ' +
+                        'not be added to DB, not sent to ' +
+                        'webhooks, and not encountered. ' +
+                        'Will still be used to ' +
+                        'determine spawnpoints. One line per ID.')
     parser.add_argument('-encwf', '--enc-whitelist-file',
                         default='', help='File containing a list of '
                         'Pokemon IDs to encounter for'
@@ -710,6 +735,11 @@ def get_args():
                                       args.webhook_blacklist]
             args.webhook_whitelist = [int(i) for i in
                                       args.webhook_whitelist]
+
+        if args.ignorelist_file:
+            with open(args.ignorelist_file) as f:
+                args.ignorelist = read_pokemon_ids_from_file(f)
+
         # Decide which scanning mode to use.
         if args.spawnpoint_scanning:
             args.scheduler = 'SpawnScan'

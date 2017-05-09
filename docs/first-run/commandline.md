@@ -10,6 +10,7 @@
                     [-cds CAPTCHA_DSK] [-mcd MANUAL_CAPTCHA_DOMAIN]
                     [-mcr MANUAL_CAPTCHA_REFRESH]
                     [-mct MANUAL_CAPTCHA_TIMEOUT] [-ed ENCOUNTER_DELAY]
+                    [-ignf IGNORE_LIST_FILE]
                     [-encwf ENC_WHITELIST_FILE]
                     [-nostore]
                     [-wwht WEBHOOK_WHITELIST | -wblk WEBHOOK_BLACKLIST | -wwhtf WEBHOOK_WHITELIST_FILE | -wblkf WEBHOOK_BLACKLIST_FILE]
@@ -142,6 +143,9 @@
     -ed ENCOUNTER_DELAY, --encounter-delay ENCOUNTER_DELAY
                         Time delay between encounter pokemon in scan threads.
                         [env var: POGOMAP_ENCOUNTER_DELAY]
+    -ignf IGNORE_LIST_FILE, --ignore-list-file IGNORE_LIST_FILE
+                        File containing a list of Pokemon to ignore. [env var:
+                        POGOMAP_IGNORE_LIST_FILE]
     -encwf ENC_WHITELIST_FILE, --enc-whitelist-file ENC_WHITELIST_FILE
                         File containing a list of Pokemon IDs to encounter for
                         IV/CP scanning. [env var: POGOMAP_IV_WHITELIST_FILE]
