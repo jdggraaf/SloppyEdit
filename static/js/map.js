@@ -452,7 +452,9 @@ function scout(encounterId) { // eslint-disable-line no-unused-vars
                     cpEl = $('#pkmCP' + encounterIdLong)
                 }
                 if (movesEl.length === 0) {
-                    cpEl.after(buildMovesDiv(encounterIdLong, data.move_1, data.move_2, data.rating_attack, data.rating_defense))
+                    var pMove1 = (moves[data.move_1] !== undefined) ? i8ln(moves[data.move_1]['name']) : 'gen/unknown'
+                    var pMove2 = (moves[data.move_1] !== undefined) ? i8ln(moves[data.move_1]['name']) : 'gen/unknown'
+                    cpEl.after(buildMovesDiv(encounterIdLong, pMove1, pMove2, data.rating_attack, data.rating_defense))
                     movesEl = $('#pkmMoves' + encounterIdLong)
                 }
                 if (genderEl.length === 0) {
@@ -557,8 +559,8 @@ function pokemonLabel(item) {
     var prob1 = item['catch_prob_1']
     var prob2 = item['catch_prob_2']
     var prob3 = item['catch_prob_3']
-    var ratingAttack = item['ratingAttack']
-    var ratingDefense = item['ratingDefense']
+    var ratingAttack = item['rating_attack']
+    var ratingDefense = item['rating_defense']
     var encounterIdLong = atob(encounterId)
 
     $.each(types, function (index, type) {
