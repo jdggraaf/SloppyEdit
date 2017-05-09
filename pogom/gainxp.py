@@ -35,7 +35,7 @@ ITEM_NAMES = {
 
 
 def check_for_ditto(args, api, p, perform_encounter, inventory):
-    pokemon_id = p['pokemon_id']
+    pokemon_id = p['pokemon_data']['pokemon_id']
     pname = get_pokemon_name(pokemon_id)
     log.info(u'{} may be a Ditto. Triggering catch logic!'.format(pname))
 
