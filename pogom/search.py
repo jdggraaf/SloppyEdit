@@ -42,11 +42,12 @@ from pgoapi import utilities as util
 from pgoapi.hash_server import (HashServer, BadHashRequestException,
                                 HashingOfflineException)
 from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
-                     WorkerStatus, HashKeys)
+                     WorkerStatus, HashKeys, Account)
 from .utils import now, clear_dict_response
 from .transform import get_new_coords, jitter_location
 from .account import (setup_api, check_login, get_tutorial_state,
-                      complete_tutorial, AccountSet)
+                      complete_tutorial, AccountSet, get_player_inventory, get_player_stats)
+from pogom.gainxp import level_up_rewards_request
 from .captcha import captcha_overseer_thread, handle_captcha
 from .proxy import get_new_proxy
 
@@ -772,6 +773,13 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                 account['username'])
             log.info(status['message'])
 
+            # Get or create new account stats entry
+            acc_stats, created = Account.get_or_create(username=account['username'],
+                                                       defaults={'username': account['username']})
+            if created:
+                acc_stats.update(account)
+            account['stats'] = acc_stats
+
             # New lease of life right here.
             status['fail'] = 0
             status['success'] = 0
@@ -961,6 +969,13 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     time.sleep(scheduler.delay(status['last_scan_date']))
                     continue
 
+                # Update player account stats.
+                account.update(get_player_stats(response_dict))
+
+                # Extract player inventory
+                inventory = get_player_inventory(response_dict)
+                account['inventory'] = inventory
+
                 # Got the response, check for captcha, parse it out, then send
                 # todo's to db/wh queues.
                 try:
@@ -1011,6 +1026,15 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         status['message'], repr(e)))
                     if response_dict is not None:
                         del response_dict
+
+                # Update account stats
+                if acc_stats.awarded_to_level < account['level']:
+                    lvlup_award_result = level_up_rewards_request(api, account[
+                        'level'], account['username'], inventory)
+                    if lvlup_award_result in (1, 2):
+                        acc_stats.awarded_to_level = account['level']
+                acc_stats.update(account)
+                dbq.put((Account, {account['username']: acc_stats.db_format()}))
 
                 # Get detailed information about gyms.
                 if args.gym_info and parsed:
