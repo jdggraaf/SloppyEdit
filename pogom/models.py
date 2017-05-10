@@ -2261,6 +2261,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                      not in args.webhook_blacklist)):
                     wh_poke = pokemon[p['encounter_id']].copy()
                     wh_poke.update({
+                        # PokeAlarm requires 'pokemon_level' instead of just 'level'
+                        'pokemon_level': pokemon[p['encounter_id']].get('level'),
                         'disappear_time': calendar.timegm(
                             disappear_time.timetuple()),
                         'last_modified_time': p['last_modified_timestamp_ms'],
