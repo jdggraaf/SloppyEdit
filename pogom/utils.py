@@ -729,12 +729,10 @@ def get_args():
 
         if args.webhook_whitelist_file:
             with open(args.webhook_whitelist_file) as f:
-                args.webhook_whitelist = [get_pokemon_id(name) for name in
-                                          f.read().splitlines()]
+                args.webhook_whitelist = read_pokemon_ids_from_file(f)
         elif args.webhook_blacklist_file:
             with open(args.webhook_blacklist_file) as f:
-                args.webhook_blacklist = [get_pokemon_id(name) for name in
-                                          f.read().splitlines()]
+                args.webhook_blacklist = read_pokemon_ids_from_file(f)
         else:
             args.webhook_blacklist = [int(i) for i in
                                       args.webhook_blacklist]
