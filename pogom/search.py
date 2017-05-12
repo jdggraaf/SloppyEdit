@@ -1154,12 +1154,16 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     if response_dict is not None:
                         del response_dict
 
-                # Update account stats
+                # Check for level up rewards.
                 if acc_stats.awarded_to_level < account['level']:
+                    log.info("Checking level up rewards for level {}.".format(
+                        account['level']))
                     lvlup_award_result = level_up_rewards_request(api, account[
                         'level'], account['username'], inventory)
                     if lvlup_award_result in (1, 2):
+                        log.info("Got level up rewards! Yay!")
                         acc_stats.awarded_to_level = account['level']
+                # Update account stats
                 acc_stats.update(account)
                 dbq.put((Account, {account['username']: acc_stats.db_format()}))
 

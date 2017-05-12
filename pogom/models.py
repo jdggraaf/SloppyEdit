@@ -26,7 +26,7 @@ from cachetools import cached
 from timeit import default_timer
 
 from pogom.gainxp import catch, pokestop_spinnable, cleanup_inventory, \
-    spin_pokestop_update_inventory, check_for_ditto
+    spin_pokestop_update_inventory, is_ditto
 from pogom.pgscout import pgscout_encounter
 from . import config
 from .utils import (get_pokemon_name, get_pokemon_rarity, get_pokemon_types,
@@ -2220,19 +2220,15 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     pokemon[p['encounter_id']]['form'] = pokemon_info[
                         'pokemon_display'].get('form', None)
 
-            # Catch pokemon to check for Ditto if --ditto enabled
+            # Catch pokemon to check for Ditto if --gain-xp enabled
             # Original code by voxx!
             have_balls = inventory.get('balls', 0) > 0
             if args.gain_xp and not account_is_adult and pokemon_id in DITTO_POKEDEX_IDS and have_balls:
-                ditto_result = check_for_ditto(args, api, p,
-                                               not encounter_result, inventory)
-                if ditto_result and account_is_adult:
-                    pokemon[p['encounter_id']].update(
-                        {'move_1': ditto_result['m1'],
-                            'move_2': ditto_result['m2'],
-                            'height': ditto_result['height'],
-                            'weight': ditto_result['weight'],
-                            'gender': ditto_result['gender']})
+                if is_ditto(args, api, p, inventory):
+                    pokemon[p['encounter_id']]['pokemon_id'] = 132
+                    pokemon_id = 132
+                    # Scout result is useless
+                    scout_result = None
 
             # Updating Pokemon data from PGScout result
             if scout_result is not None and scout_result['success']:

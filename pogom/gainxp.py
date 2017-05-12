@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 DROP_BALLS = 50
 
+DITTO_POKEDEX_ID = 132
+
 ITEM_NAMES = {
     ITEM_POKE_BALL: u"Poké Ball",
     ITEM_GREAT_BALL: u"Great Ball",
@@ -34,32 +36,44 @@ ITEM_NAMES = {
 }
 
 
-def check_for_ditto(args, api, p, perform_encounter, inventory):
+def is_ditto(args, api, p, inventory):
     pokemon_id = p['pokemon_data']['pokemon_id']
-    pname = get_pokemon_name(pokemon_id)
-    log.info(u'{} may be a Ditto. Triggering catch logic!'.format(pname))
+    pokemon_name = get_pokemon_name(pokemon_id)
+    captured_pokemon_name = pokemon_name
+    log.info(u'{} may be a Ditto. Triggering catch logic!'.format(pokemon_name))
 
-    # We need an encounter before trying to catch a Pokemon.
-    if perform_encounter:
-        # Encounter Pokémon.
-        time.sleep(args.encounter_delay)
-        encounter_pokemon_request(api, p['encounter_id'], p['spawn_point_id'],
-                                  [p['latitude'], p['longitude']])
+    # Encounter Pokemon.
+    time.sleep(args.encounter_delay)
+    encounter_pokemon_request(api, p['encounter_id'], p['spawn_point_id'],
+                              [p['latitude'], p['longitude']])
 
-    caught = catch(api, p['encounter_id'], p['spawn_point_id'], pname,
-                   inventory)
-    catch_status = caught.get('catch_status', None)
-    if catch_status == 'success' and int(caught.get('pid')) == 132:
-        log.info('Caught {} was a Ditto!'.format(pname))
-        return caught
-    return False
+    # Now try to catch it.
+    got_ditto = False
+    catch_result = catch(api, p['encounter_id'], p['spawn_point_id'], inventory)
+    if catch_result['catch_status'] == 'success':
+        if int(catch_result['pid']) == DITTO_POKEDEX_ID:
+            logmsg = u'Successfully caught a Ditto disguised as {}! Needed {} attempts.'
+            captured_pokemon_name = get_pokemon_name(DITTO_POKEDEX_ID)
+            got_ditto = True
+        else:
+            logmsg = u'Successfully caught a regular {} after {} attempts.'
+        log.info(logmsg.format(pokemon_name, catch_result['attempts']))
+        # Release the Pokemon in any case
+        time.sleep(random.uniform(7, 10))
+        if release(api, catch_result['capture_id']):
+            log.info(u'Successfully released {}.'.format(captured_pokemon_name))
+    else:
+        log.info("Failed catching {}: {} Attempts: {}".format(pokemon_name, catch_result['reason'], catch_result['attempts']))
+    return got_ditto
 
-
-def catch(api, encounter_id, spawn_point_id, pkm_name, inventory):
+def catch(api, encounter_id, spawn_point_id, inventory):
     # Try to catch pokemon, but don't get stuck.
-    attempts = 1
-    while attempts < 3:
-        log.info('Starting attempt %s to catch a %s!', attempts, pkm_name)
+    rv = {
+        'catch_status': 'fail',
+        'reason': "Unknown reason.",
+        'attempts': 1
+    }
+    while rv['attempts'] < 3:
         time.sleep(random.uniform(2, 3))
         try:
             # Randomize throwing parameters
@@ -95,61 +109,58 @@ def catch(api, encounter_id, spawn_point_id, pkm_name, inventory):
 
                 # Success!
                 if catch_status == 1:
-                    cpid = catch_result['responses']['CATCH_POKEMON']['captured_pokemon_id']
-                    log.info('Catch attempt %s was successful for %s!', attempts, pkm_name)
-
-                    rv = {'catch_status': 'success'}
-                    # Check inventory for new pokemon id and movesets
-                    iitems = catch_result['responses']['GET_INVENTORY']['inventory_delta']['inventory_items']
-                    for item in iitems:
-                        iidata = item['inventory_item_data']
-                        if 'pokemon_data' in iidata and iidata['pokemon_data']['id'] == cpid:
-                            rv.update({
-                                'pid': iidata['pokemon_data']['pokemon_id'],
-                                'm1': iidata['pokemon_data']['move_1'],
-                                'm2': iidata['pokemon_data']['move_2'],
-                                'height': iidata['pokemon_data']['height_m'],
-                                'weight': iidata['pokemon_data']['weight_kg'],
-                                'gender': iidata['pokemon_data']['pokemon_display']['gender'],
-                                'cp': '?'
-                            })
-                            time.sleep(random.uniform(7, 10))
-                            release(api, pkm_name, cpid)
-                    if not 'pid' in rv:
-                        log.error('Could not find caught Pokemon in inventory. Cannot release. Too bad!')
+                    # Check inventory for caught Pokemon
+                    capture_id = catch_result['responses']['CATCH_POKEMON']['captured_pokemon_id']
+                    pid = get_captured_pokemon_id_from_inventory(capture_id, catch_result)
+                    if pid:
+                        # Set ID of caught Pokemon
+                        rv['catch_status'] = 'success'
+                        rv['pid'] = pid
+                        rv['capture_id'] = capture_id
+                    else:
+                        rv['reason'] = "Could not find caught Pokemon in inventory."
                     return rv
 
                 # Broke free!
                 if catch_status == 2:
-                    log.info('Catch attempt %s failed for %s. It broke free!', attempts, pkm_name)
+                    log.debug('Catch attempt %s failed. It broke free!', rv['attempts'])
 
                 # Ran away!
                 if catch_status == 3:
-                    log.info('Catch attempt %s failed for %s. It ran away!', attempts, pkm_name)
-                    return {'catch_status': 'ran'}
+                    rv['reason'] = "Pokemon ran away!"
+                    return rv
 
                 # Dodged!
                 if catch_status == 4:
-                    log.info('Catch attempt %s failed for %s. It dodged the ball!', attempts, pkm_name)
+                    log.debug('Catch attempt %s failed. It dodged the ball!', rv['attempts'])
 
             else:
-                log.error('Catch attempt %s failed for %s. The api response was empty!', attempts, pkm_name)
+                log.error('Catch attempt %s failed. The api response was empty!', rv['attempts'])
 
         except Exception as e:
-            log.error('Catch attempt %s failed for: %s. API exception: %s', attempts, pkm_name, repr(e))
+            log.error('Catch attempt %s failed. API exception: %s', rv['attempts'], repr(e))
 
-        attempts += 1
+        rv['attempts'] += 1
 
-    if attempts >= 3:
-        log.error('Failed to catch %s after %s attempts. Giving up.', pkm_name, (attempts - 1))
-        rv = {'catch_status': 'fail'}
+    if rv['attempts'] >= 3:
+        rv['attempts'] -= 1
+        rv['reason'] = "Giving up."
 
     return rv
 
 
-def release(api, pkm_name, cpid):
+def get_captured_pokemon_id_from_inventory(capture_id, response):
+    iitems = response['responses']['GET_INVENTORY']['inventory_delta'][
+        'inventory_items']
+    for item in iitems:
+        iidata = item['inventory_item_data']
+        if 'pokemon_data' in iidata and iidata['pokemon_data']['id'] == capture_id:
+            return iidata['pokemon_data']['pokemon_id']
+    return None
+
+
+def release(api, cpid):
     try:
-        log.info('Attempting to release %s', pkm_name)
         req = api.create_request()
         req.release_pokemon(pokemon_id=cpid)
         req.check_challenge()
@@ -163,15 +174,14 @@ def release(api, pkm_name, cpid):
         if (release_result is not None and 'RELEASE_POKEMON' in release_result['responses']):
             release_result = release_result['responses']['RELEASE_POKEMON']['result']
             if int(release_result) == 1:
-                log.info('Successfully released %s', pkm_name)
+                return True
             else:
-                log.info('Failed to release %s with result code: %s.', pkm_name, release_result)
+                log.error('Failed to release Pokemon with result code: %s.', release_result)
 
     except Exception as e:
-        log.error('Exception while releasing %s. Error: %s', pkm_name, repr(e))
-        return False
+        log.error('Exception while releasing Pokemon. Error: %s', repr(e))
 
-    return True
+    return False
 
 
 def pokestop_spinnable(fort, step_location):
@@ -309,7 +319,6 @@ def drop_items_request(api, item_id, amount, inventory):
 # 1: SUCCESS
 # 2: AWARDED_ALREADY
 def level_up_rewards_request(api, level, username, inventory):
-    log.info('Attempting to check level up rewards for level {} of account {}.'.format(level, username))
     time.sleep(random.uniform(2, 3))
     try:
         req = api.create_request()
@@ -328,6 +337,6 @@ def level_up_rewards_request(api, level, username, inventory):
             return reward_details.get('result', -1)
 
     except Exception as e:
-        log.warning('Exception while requesting level up rewards: %s', repr(e))
+        log.error('Exception while requesting level up rewards: %s', repr(e))
 
     return False
