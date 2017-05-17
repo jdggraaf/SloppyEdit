@@ -367,8 +367,10 @@ function initSidebar() {
     var searchBox = new google.maps.places.Autocomplete(document.getElementById('next-location'))
     $('#next-location').css('background-color', $('#geoloc-switch').prop('checked') ? '#e0e0e0' : '#ffffff')
 
-    updateSearchStatus()
-    setInterval(updateSearchStatus, 5000)
+    if ($('#search-switch').length) {
+        updateSearchStatus()
+        setInterval(updateSearchStatus, 5000)
+    }
 
     searchBox.addListener('place_changed', function () {
         var place = searchBox.getPlace()
@@ -453,7 +455,7 @@ function scout(encounterId) { // eslint-disable-line no-unused-vars
                 }
                 if (movesEl.length === 0) {
                     var pMove1 = (moves[data.move_1] !== undefined) ? i8ln(moves[data.move_1]['name']) : 'gen/unknown'
-                    var pMove2 = (moves[data.move_1] !== undefined) ? i8ln(moves[data.move_1]['name']) : 'gen/unknown'
+                    var pMove2 = (moves[data.move_2] !== undefined) ? i8ln(moves[data.move_2]['name']) : 'gen/unknown'
                     cpEl.after(buildMovesDiv(encounterIdLong, pMove1, pMove2, data.rating_attack, data.rating_defense))
                     movesEl = $('#pkmMoves' + encounterIdLong)
                 }
