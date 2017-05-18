@@ -1871,8 +1871,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     encounter_level = level
 
     # Helping out the GC.
-    if 'GET_INVENTORY' in map_dict['responses']:
-        del map_dict['responses']['GET_INVENTORY']
 
     for i, cell in enumerate(cells):
         # If we have map responses then use the time from the request
@@ -1901,6 +1899,17 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         wild_pokemon_count = len(wild_pokemon)
     if forts:
         forts_count = len(forts)
+	totalDisks = 0
+    for items in map_dict['responses']['GET_INVENTORY']['inventory_delta']['inventory_items']:
+        inventory_item_data = items['inventory_item_data']
+        if 'player_stats' in inventory_item_data:
+            level = inventory_item_data['player_stats']['level']
+            currentExp = inventory_item_data['player_stats']['experience']
+            nextLevel = inventory_item_data['player_stats']['next_level_xp']
+
+        if 'item' in inventory_item_data and inventory_item_data['item']['item_id'] == 501:
+            totalDisks = inventory_item_data['item'].get('count', 0)
+            log.debug('@@@LURE@@@ FOUND LURES: %s IN TOTAL', totalDisks)
 
     del map_dict['responses']['GET_MAP_OBJECTS']
 
@@ -2316,24 +2325,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     distance = 0.04
                     if in_radius((f['latitude'], f['longitude']), step_location, distance):
                         if args.setLure is True:
-                            if args.lureFence is not None:
-                                allowed = geofence(step_location, args.lureFence)
-                                log.warning('FENCE: %s', allowed)
-                                if allowed == []:
-                                    log.warning('STOP IS FORBIDDEN')
-                                    forbidden = True
-                                else:
-                                    log.warning('STOP IS GOOD')
-                                    forbidden = False
-                            if args.nolureFence is not None:
-                                forbidden = geofence(step_location, args.nolureFence, forbidden=True)
-                                log.warning('DI-ALLOWFENCE: %s', forbidden)
-                                if forbidden == []:
-                                    log.warning('STOP IS GOOD')
-                                    forbidden = False
-                                else:
-                                    forbidden = True
-                                    log.warning('STOP IS FORBIDDEN')
 
                             lure_status = None
                             lure_id = 501
@@ -2342,7 +2333,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                 forbidden = True
                                 log.warning('This account has no lures! Thowing exception!')
                                 meme = spin_response['NoLures!']
-                            while lure_status is None and forbidden is False:
+                            while lure_status is None:
                                 req = api.create_request()
                                 lure_request = req.add_fort_modifier(modifier_type=lure_id,
                                                                      fort_id=f['id'],
@@ -2350,7 +2341,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                                                      player_longitude=step_location[1])
                                 time.sleep(4.20)
                                 lure_request = req.call()
-                                log.warning('@@@LURE RESPONSE@@@ %s', lure_request['responses'])
+                                log.warning('Anddd???: %s', lure_request['responses'])
                                 lure_status = lure_request['responses']['ADD_FORT_MODIFIER']['result']
                                 if lure_status is 0:
                                     log.warning('███Lure was unset! Shiet son███')
