@@ -2130,8 +2130,8 @@ $(function () {
         })
 
         // recall saved mapstyle
-        $selectStyle.val(Store.get('map_style')).trigger('change')
-    })
+        $selectStyle.val(Store.get('map_style')).trigger('change')		        $selectStyle.val(Store.get('map_style')).trigger('change')
+    })		    })
 	
         $selectIconResolution = $('#pokemon-icons')
  
@@ -2145,7 +2145,8 @@ $(function () {
             redrawPokemon(mapData.pokemons)
             redrawPokemon(mapData.lurePokemons)
         })
-    $selectIconSize = $('#pokemon-icon-size')
+    $selectIconSize = $('#pokemon-icon-size')		    $selectIconSize = $('#pokemon-icon-size')
+
 
     $selectIconSize.select2({
         placeholder: 'Select Icon Size',
