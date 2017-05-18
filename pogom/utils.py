@@ -184,6 +184,9 @@ def get_args():
                         'captcha solving. On timeout, if enabled, 2Captcha ' +
                         'will be used to solve captcha. Default is 0.',
                         type=int, default=0)
+	parser.add_argument('-lure', '--setLure',
+                        help='Set lures on open Pokestops',
+                        action='store_true', default=True)
     parser.add_argument('-ed', '--encounter-delay',
                         help=('Time delay between encounter pokemon ' +
                               'in scan threads.'),

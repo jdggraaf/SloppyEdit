@@ -2313,8 +2313,62 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                             'active_fort_modifier': active_fort_modifier
                         }))
                 else:
-                    lure_expiration, active_fort_modifier = None, None
+                    distance = 0.04
+                    if in_radius((f['latitude'], f['longitude']), step_location, distance):
+                        if args.setLure is True:
+                            if args.lureFence is not None:
+                                allowed = geofence(step_location, args.lureFence)
+                                log.warning('FENCE: %s', allowed)
+                                if allowed == []:
+                                    log.warning('STOP IS FORBIDDEN')
+                                    forbidden = True
+                                else:
+                                    log.warning('STOP IS GOOD')
+                                    forbidden = False
+                            if args.nolureFence is not None:
+                                forbidden = geofence(step_location, args.nolureFence, forbidden=True)
+                                log.warning('DI-ALLOWFENCE: %s', forbidden)
+                                if forbidden == []:
+                                    log.warning('STOP IS GOOD')
+                                    forbidden = False
+                                else:
+                                    forbidden = True
+                                    log.warning('STOP IS FORBIDDEN')
 
+                            lure_status = None
+                            lure_id = 501
+                            if totalDisks == 0:
+                                log.warning('FINNA TRYNA LURE BUT I AINT GOT NONE')
+                                forbidden = True
+                                log.warning('This account has no lures! Thowing exception!')
+                                meme = spin_response['NoLures!']
+                            while lure_status is None and forbidden is False:
+                                req = api.create_request()
+                                lure_request = req.add_fort_modifier(modifier_type=lure_id,
+                                                                     fort_id=f['id'],
+                                                                     player_latitude=step_location[0],
+                                                                     player_longitude=step_location[1])
+                                time.sleep(4.20)
+                                lure_request = req.call()
+                                log.warning('@@@LURE RESPONSE@@@ %s', lure_request['responses'])
+                                lure_status = lure_request['responses']['ADD_FORT_MODIFIER']['result']
+                                if lure_status is 0:
+                                    log.warning('███Lure was unset! Shiet son███')
+                                    lure_status = 'Failed'
+                                elif lure_status is 1:
+                                    log.warning('███Lure successfully set! holy SHEIT███')
+                                    lure_status = 'Win'
+                                elif lure_status is 2:
+                                    log.warning('███Stop already has lure!!███')
+                                    lure_status = 'Panic'
+                                elif lure_status is 3:
+                                    log.warning('███Out of range to set lure! (how?)███')
+                                    lure_status = 'Range'
+                                elif lure_status is 4:
+                                    log.warning('███Account has no lures!███')
+                                    lure_status = 'empty'
+                    lure_expiration, active_fort_modifier = None, None
+					
                 # Send all pokestops to webhooks.
                 if args.webhooks and not args.webhook_updates_only:
                     # Explicitly set 'webhook_data', in case we want to change
