@@ -2130,22 +2130,18 @@ $(function () {
         })
 
         // recall saved mapstyle
-        $selectStyle.val(Store.get('map_style')).trigger('change')		        $selectStyle.val(Store.get('map_style')).trigger('change')
-    })		    })
+        $selectStyle.val(Store.get('map_style')).trigger('change')
+		})
 	
         $selectIconResolution = $('#pokemon-icons')
- 
-        $selectIconResolution.select2({
-            placeholder: 'Select Icon Resolution',
-            minimumResultsForSearch: Infinity
-        })
  
         $selectIconResolution.on('change', function () {
             Store.set('pokemonIcons', this.value)
             redrawPokemon(mapData.pokemons)
             redrawPokemon(mapData.lurePokemons)
         })
-    $selectIconSize = $('#pokemon-icon-size')		    $selectIconSize = $('#pokemon-icon-size')
+		
+    $selectIconSize = $('#pokemon-icon-size')
 
 
     $selectIconSize.select2({
