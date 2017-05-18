@@ -7,6 +7,7 @@ var $selectPokemonNotify
 var $selectRarityNotify
 var $textPerfectionNotify
 var $selectStyle
+var $selectIconResolution
 var $selectIconSize
 var $selectOpenGymsOnly
 var $selectTeamGymsOnly
@@ -380,7 +381,11 @@ function initSidebar() {
         var loc = place.geometry.location
         changeLocation(loc.lat(), loc.lng())
     })
-
+    var icons = $('#pokemon-icons')
+    $.each(pokemonSprites, function (key, value) {
+        icons.append($('<option></option>').attr('value', key).text(value.name))
+    })
+    icons.val((pokemonSprites[Store.get('pokemonIcons')]) ? Store.get('pokemonIcons') : 'highres')
     $('#pokemon-icon-size').val(Store.get('iconSizeModifier'))
 }
 
@@ -2127,7 +2132,19 @@ $(function () {
         // recall saved mapstyle
         $selectStyle.val(Store.get('map_style')).trigger('change')
     })
-
+	
+        $selectIconResolution = $('#pokemon-icons')
+ 
+        $selectIconResolution.select2({
+            placeholder: 'Select Icon Resolution',
+            minimumResultsForSearch: Infinity
+        })
+ 
+        $selectIconResolution.on('change', function () {
+            Store.set('pokemonIcons', this.value)
+            redrawPokemon(mapData.pokemons)
+            redrawPokemon(mapData.lurePokemons)
+        })
     $selectIconSize = $('#pokemon-icon-size')
 
     $selectIconSize.select2({
