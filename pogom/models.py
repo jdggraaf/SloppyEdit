@@ -2344,19 +2344,19 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                 log.warning('Anddd???: %s', lure_request['responses'])
                                 lure_status = lure_request['responses']['ADD_FORT_MODIFIER']['result']
                                 if lure_status is 0:
-                                    log.warning('███Lure was unset! Shiet son███')
+                                    log.warning('Lure was unset! Shiet son')
                                     lure_status = 'Failed'
                                 elif lure_status is 1:
-                                    log.warning('███Lure successfully set! holy SHEIT███')
+                                    log.warning('Lure successfully set!')
                                     lure_status = 'Win'
                                 elif lure_status is 2:
-                                    log.warning('███Stop already has lure!!███')
+                                    log.warning('Stop already has lure!!')
                                     lure_status = 'Panic'
                                 elif lure_status is 3:
-                                    log.warning('███Out of range to set lure! (how?)███')
+                                    log.warning('Out of range to set lure! (how?)')
                                     lure_status = 'Range'
                                 elif lure_status is 4:
-                                    log.warning('███Account has no lures!███')
+                                    log.warning('Account has no lures!')
                                     lure_status = 'empty'
                     lure_expiration, active_fort_modifier = None, None
 					
