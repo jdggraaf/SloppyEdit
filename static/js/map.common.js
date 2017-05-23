@@ -789,16 +789,6 @@ var pGoStyleNight = [{
 }]
 
 var pokemonSprites = {
-  hybrid: {
-    columns: 17,
-    iconWidth: 120,
-    iconHeight: 120,
-    spriteWidth: 2040,
-    spriteHeight: 1800,
-    filename: 'static/hybrid.png',
-    name: 'Hybrid'
-	},
-  highres: {
     columns: 28,
     iconWidth: 80,
     iconHeight: 80,
@@ -806,34 +796,6 @@ var pokemonSprites = {
     spriteHeight: 1440,
     filename: 'static/icons-large-sprite.png',
     name: 'High-Res'
-	},
-  shuffle: {
-    columns: 28,
-    iconWidth: 128,
-    iconHeight: 128,
-    spriteWidth: 3584,
-    spriteHeight: 3328,
-    filename: 'static/shuffle.png',
-    name: 'Shuffle'
-	},
-  rumble: {
-    columns: 8,
-    iconWidth: 64,
-    iconHeight: 64,
-    spriteWidth: 512,
-    spriteHeight: 2048,
-    filename: 'static/rumble.png',
-    name: 'Rumble'
-	},
-  artificial: {
-    columns: 8,
-    iconWidth: 64,
-    iconHeight: 64,
-    spriteWidth: 512,
-    spriteHeight: 2048,
-    filename: 'static/artificial.png',
-    name: 'Artificial.nl'
-    }
 }
 
 //
@@ -960,6 +922,10 @@ var StoreOptions = {
         default: false,
         type: StoreTypes.Boolean
     },
+    'playCries': {
+        default: false,
+        type: StoreTypes.Boolean
+    },
     'geoLocate': {
         default: false,
         type: StoreTypes.Boolean
@@ -989,7 +955,7 @@ var StoreOptions = {
         type: StoreTypes.Boolean
     },
     'pokemonIcons': {
-        default: 'hybrid',
+        default: 'highres',
         type: StoreTypes.String
     },
     'iconSizeModifier': {
@@ -1076,7 +1042,7 @@ function setupPokemonMarker(item, map, isBounceDisabled) {
     // Scale icon size up with the map exponentially
     var iconSize = 2 + (map.getZoom() - 3) * (map.getZoom() - 3) * 0.2 + Store.get('iconSizeModifier')
     var pokemonIndex = item['pokemon_id'] - 1
-    var sprite = pokemonSprites[Store.get('pokemonIcons')] || pokemonSprites['hybrid']
+    var sprite = pokemonSprites
     var icon = getGoogleSprite(pokemonIndex, sprite, iconSize)
 
     var animationDisabled = false

@@ -116,7 +116,7 @@ class Pogom(Flask):
                 'gender': response['gender'],
                 'form': response.get('form', None),
                 'cp': response['cp'],
-                'level': response['level'],
+                'cp_multiplier': response['cp_multiplier'],
                 'catch_prob_1': response['catch_prob_1'],
                 'catch_prob_2': response['catch_prob_2'],
                 'catch_prob_3': response['catch_prob_3'],
@@ -247,6 +247,7 @@ class Pogom(Flask):
         return render_template('map.html',
                                lat=map_lat,
                                lng=map_lng,
+                               showAllZoomLevel=args.show_all_zoom_level,
                                gmaps_key=config['GMAPS_KEY'],
                                lang=config['LOCALE'],
                                show=visibility_flags

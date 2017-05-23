@@ -23,7 +23,8 @@ from pogom.altitude import get_gmaps_altitude
 
 from pogom.search import search_overseer_thread
 from pogom.models import (init_database, create_tables, drop_tables,
-                          Pokemon, db_updater, clean_db_loop)
+                          Pokemon, db_updater, clean_db_loop,
+                          verify_table_encoding, verify_database_schema)
 from pogom.webhook import wh_updater
 
 from pogom.proxy import check_proxies, proxies_refresher
@@ -118,8 +119,9 @@ def main():
 
     # Let's not forget to run Grunt / Only needed when running with webserver.
     if not args.no_server:
+        root_path = os.path.dirname(__file__)
         if not os.path.exists(
-                os.path.join(os.path.dirname(__file__), 'static/dist')):
+                os.path.join(root_path, 'static/dist')):
             log.critical(
                 'Missing front-end assets (static/dist) -- please run ' +
                 '"npm install && npm run build" before starting the server.')
@@ -127,76 +129,10 @@ def main():
 
         # You need custom image files now.
         if not os.path.isfile(
-                os.path.join(os.path.dirname(__file__),
-                             'static/icons-sprite.png')):
+                os.path.join(root_path, 'static/icons-sprite.png')):
             log.info('Sprite files not present, extracting bundled ones...')
-            extract_sprites()
+            extract_sprites(root_path)
             log.info('Done!')
-
-    # Beehive configuration
-    beehive_workers = [args.workers]
-    if args.beehive > 0:
-        beehive_size = 1
-        # Calculate number of hives required ( -bh 2 => i:1, i:2 )
-        for i in range(1, args.beehive+1):
-            beehive_size += i*6
-
-        # Initialize worker distribution list
-        beehive_workers = [0 for x in range(beehive_size)]
-        skip_indexes = []
-        hives_ignored = 0
-        workers_forced = 0
-        log.debug('-bhw --beehive-workers: %s', args.beehive_workers)
-
-        # Parse beehive configuration
-        for i in range(0, len(args.beehive_workers)):
-            bhw = args.beehive_workers[i].split(':')
-            bhw_index = int(bhw[0])
-            bhw_workers = int(bhw[1])
-            if (bhw_index >= 0) and (bhw_index < beehive_size):
-                if bhw_index in skip_indexes:
-                    log.warning('Duplicate hive index found in -bhw ' +
-                                '--beehive-workers: %d', bhw_index)
-                    continue
-                if bhw_workers <= 0:
-                    skip_indexes.append(bhw_index)
-                    beehive_workers[bhw_index] = 0
-                    hives_ignored += 1
-                else:
-                    skip_indexes.append(bhw_index)
-                    beehive_workers[bhw_index] = bhw_workers
-                    workers_forced += bhw_workers
-            else:
-                log.warning('Invalid hive index found in -bhw ' +
-                            '--beehive-workers: %d', bhw_index)
-        # Check if we have enough workers for beehive setup.
-        workers_required = workers_forced
-        if args.workers_per_hive > 0:
-            count = beehive_size - len(skip_indexes)
-            workers_required += count * args.workers_per_hive
-
-        log.info('Beehive size: %d (%d hives ignored). Workers forced: ' +
-                 '%d. Workers required: %d', beehive_size, hives_ignored,
-                 workers_forced, workers_required)
-        if args.workers < workers_required:
-            log.critical('Not enough workers to fill the beehive. ' +
-                         'Increase -w --workers, decrease -bh --beehive ' +
-                         'or decrease -wph --workers-per-hive')
-            sys.exit()
-
-        # Assign remaining workers to available hives.
-        remaining_workers = args.workers - workers_forced
-        populate_index = 0
-        while remaining_workers > 0:
-            beehive_index = populate_index % beehive_size
-            if beehive_index in skip_indexes:
-                populate_index += 1
-                continue
-
-            beehive_workers[beehive_index] += 1
-            populate_index += 1
-            remaining_workers -= 1
-        log.debug('Beehive worker distribution: %s', beehive_workers)
 
     # These are very noisy, let's shush them up a bit.
     logging.getLogger('peewee').setLevel(logging.INFO)
@@ -286,7 +222,14 @@ def main():
             drop_tables(db)
         elif os.path.isfile(args.db):
             os.remove(args.db)
+
+    verify_database_schema(db)
+
     create_tables(db)
+
+    # fixing encoding on present and future tables
+    verify_table_encoding(db)
+
     if args.clear_db:
         log.info("Drop and recreate is complete. Now remove -cd and restart.")
         sys.exit()
@@ -339,6 +282,9 @@ def main():
         t.daemon = True
         t.start()
 
+    config['ROOT_PATH'] = app.root_path
+    config['GMAPS_KEY'] = args.gmaps_key
+
     if not args.only_server:
 
         # Abort if we don't have a hash key set
@@ -373,7 +319,7 @@ def main():
                 file.write(json.dumps(spawns))
                 log.info('Finished exporting spawn points')
 
-        argset = (args, beehive_workers, new_location_queue, pause_bit,
+        argset = (args, new_location_queue, pause_bit,
                   heartbeat, db_updates_queue, wh_updates_queue)
 
         log.debug('Starting a %s search thread', args.scheduler)
@@ -391,9 +337,6 @@ def main():
     app.set_search_control(pause_bit)
     app.set_heartbeat_control(heartbeat)
     app.set_location_queue(new_location_queue)
-
-    config['ROOT_PATH'] = app.root_path
-    config['GMAPS_KEY'] = args.gmaps_key
 
     if args.no_server:
         # This loop allows for ctrl-c interupts to work since flask won't be

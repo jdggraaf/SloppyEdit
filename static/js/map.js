@@ -7,7 +7,6 @@ var $selectPokemonNotify
 var $selectRarityNotify
 var $textPerfectionNotify
 var $selectStyle
-var $selectIconResolution
 var $selectIconSize
 var $selectOpenGymsOnly
 var $selectTeamGymsOnly
@@ -93,6 +92,14 @@ var notifyText = 'disappears at <dist> (<udist>)'
 //
 // Functions
 //
+
+function isShowAllZoom() {
+    return showAllZoomLevel > 0 && map.getZoom() >= showAllZoomLevel
+}
+
+function getExcludedPokemon() {
+    return isShowAllZoom() ? [] : excludedPokemon
+}
 
 function excludePokemon(id) { // eslint-disable-line no-unused-vars
     $selectExclude.val(
@@ -365,6 +372,8 @@ function initSidebar() {
     $('#spawnpoints-switch').prop('checked', Store.get('showSpawnpoints'))
     $('#ranges-switch').prop('checked', Store.get('showRanges'))
     $('#sound-switch').prop('checked', Store.get('playSound'))
+    $('#pokemoncries').toggle(Store.get('playSound'))
+    $('#cries-switch').prop('checked', Store.get('playCries'))
     var searchBox = new google.maps.places.Autocomplete(document.getElementById('next-location'))
     $('#next-location').css('background-color', $('#geoloc-switch').prop('checked') ? '#e0e0e0' : '#ffffff')
 
@@ -381,11 +390,7 @@ function initSidebar() {
         var loc = place.geometry.location
         changeLocation(loc.lat(), loc.lng())
     })
-    var icons = $('#pokemon-icons')
-    $.each(pokemonSprites, function (key, value) {
-        icons.append($('<option></option>').attr('value', key).text(value.name))
-    })
-    icons.val((pokemonSprites[Store.get('pokemonIcons')]) ? Store.get('pokemonIcons') : 'highres')
+
     $('#pokemon-icon-size').val(Store.get('iconSizeModifier'))
 }
 
@@ -455,7 +460,7 @@ function scout(encounterId) { // eslint-disable-line no-unused-vars
                     ivEl = $('#pkmIV' + encounterIdLong)
                 }
                 if (cpEl.length === 0) {
-                    ivEl.after(buildCPDiv(encounterIdLong, data.cp, data.level))
+                    ivEl.after(buildCPDiv(encounterIdLong, data.cp, data.cp_multiplier))
                     cpEl = $('#pkmCP' + encounterIdLong)
                 }
                 if (movesEl.length === 0) {
@@ -484,7 +489,7 @@ function scout(encounterId) { // eslint-disable-line no-unused-vars
                 pkm['height'] = data.height
                 pkm['gender'] = data.gender
                 pkm['cp'] = data.cp
-                pkm['level'] = data.level
+                pkm['cp_multiplier'] = data.cp_multiplier
                 pkm['catch_prob_1'] = data.catch_prob_1
                 pkm['catch_prob_2'] = data.catch_prob_2
                 pkm['catch_prob_3'] = data.catch_prob_3
@@ -509,23 +514,33 @@ function buildIVDiv(encounterIdLong, atk, def, sta) {
 function buildMovesDiv(encounterIdLong, pMove1, pMove2, ratingAttack, ratingDefense) {
     return `
         <div id="pkmMoves${encounterIdLong}">
-            Moves: <b>${pMove1}</b> / <b>${pMove2}</b> | Rating: <b title="Moveset Attack Rating">${ratingAttack}</b> / <b title="Moveset Defense Rating">${ratingDefense}</b>
+            Moves: <b>${pMove1}</b> / <b>${pMove2}</b> | Rating:
+            <b title="Moveset Attack Rating">${ratingAttack}</b> /
+            <b title="Moveset Defense Rating">${ratingDefense}</b>
         </div>
         `
 }
 
 function buildGenderDiv(encounterIdLong, weight, height, gender) {
+    var measurements = ""
+    if (weight !== null && height !== null) {
+        measurements = `| Weight: ${weight.toFixed(2)}kg | Height: ${height
+        .toFixed(2)}m`
+    }
     return `
         <div id="pkmGender${encounterIdLong}">
-            Gender: ${genderType[gender - 1]} | Weight: ${weight.toFixed(2)}kg | Height: ${height.toFixed(2)}m
+            Gender: ${genderType[gender - 1]}
+            ${measurements}
         </div>
         `
 }
 
-function buildCPDiv(encounterIdLong, cp, level) {
+function buildCPDiv(encounterIdLong, cp, cpMultiplier) {
+    var pokemonLevel = getPokemonLevel(cpMultiplier)
     return `
         <div id="pkmCP${encounterIdLong}">
-            Level: <b title="Maximum Level is 30">${level}</b> | CP: <b>${cp}</b>
+            Level: <b title="Maximum Level is 30">${pokemonLevel}</b> | CP:
+            <b>${cp}</b>
         </div>
         `
 }
@@ -562,7 +577,7 @@ function pokemonLabel(item) {
     var gender = item['gender']
     var form = item['form']
     var cp = item['cp']
-    var level = item['level']
+    var cpMultiplier = item['cp_multiplier']
     var prob1 = item['catch_prob_1']
     var prob2 = item['catch_prob_2']
     var prob3 = item['catch_prob_3']
@@ -578,21 +593,22 @@ function pokemonLabel(item) {
     if (atk !== null && def !== null && sta !== null) {
         details += buildIVDiv(encounterIdLong, atk, def, sta)
     }
-    if (cp != null) {
-        details += buildCPDiv(encounterIdLong, cp, level)
+    if (cp !== null && cpMultiplier !== null) {
+        details += buildCPDiv(encounterIdLong, cp, cpMultiplier)
     }
     if (pMove1 !== 'gen/unknown') {
         details += buildMovesDiv(encounterIdLong, pMove1, pMove2, ratingAttack, ratingDefense)
     }
-    if (gender != null) {
+    if (gender !== null) {
         details += buildGenderDiv(encounterIdLong, weight, height, gender)
     }
-    if (prob1 != null) {
+    if (prob1 !== null) {
         details += buildProbsDiv(encounterIdLong, prob1, prob2, prob3)
     }
+
     var scoutLink
     if (cp === null) {
-        scoutLink = `<a href='javascript:void(0);' onclick='javascript:scout("${encounterId}");' title='Scout CP'>Scout</a>&nbsp;&nbsp`
+        scoutLink = `<a href='javascript:void(0);' onclick='javascript:scout("${encounterId}");' title='Scout CP'>Scout</a>`
     } else {
         scoutLink = ''
     }
@@ -627,8 +643,8 @@ function pokemonLabel(item) {
             <a href='javascript:void(0);' onclick='javascript:openMapDirections(${latitude},${longitude});' title='View in Maps'>Get directions</a>
         </div>
         <div>
+            <a href='javascript:void(0);' onclick='javascript:toggleOtherPokemon("${id}");' title='Toggle display of other Pokemon'>Toggle Others</a>&nbsp;&nbsp
             ${scoutLink}
-            <a href='javascript:void(0);' onclick='javascript:toggleOtherPokemon("${id}");' title='Toggle display of other Pokemon'>Toggle Others</a>
         </div>`
     return contentstring
 }
@@ -838,6 +854,18 @@ function getIv(atk, def, stm) {
     return false
 }
 
+function getPokemonLevel(cpMultiplier) {
+    if (cpMultiplier < 0.734) {
+        var pokemonLevel = (58.35178527 * cpMultiplier * cpMultiplier -
+                         2.838007664 * cpMultiplier + 0.8539209906)
+    } else {
+        pokemonLevel = 171.0112688 * cpMultiplier - 95.20425243
+    }
+    pokemonLevel = (Math.round(pokemonLevel) * 2) / 2
+
+    return pokemonLevel
+}
+
 function lpad(str, len, padstr) {
     return Array(Math.max(len - String(str).length + 1, 0)).join(padstr) + str
 }
@@ -890,7 +918,25 @@ function getNotifyText(item) {
     }
 }
 
+function playPokemonSound(pokemonID) {
+    if (!Store.get('playSound')) {
+        return
+    }
+    if (!Store.get('playCries')) {
+        audio.play()
+    } else {
+        var audioCry = new Audio('static/sounds/cries/' + pokemonID + '.wav')
+        audioCry.play().catch(function (err) {
+            if (err) {
+                console.log('Sound for Pokémon ' + pokemonID + ' is missing, using generic sound instead.')
+                audio.play()
+            }
+        })
+    }
+}
+
 function customizePokemonMarker(marker, item, skipNotification) {
+    var notifyText = getNotifyText(item)
     marker.addListener('click', function () {
         this.setAnimation(null)
         this.animationDisabled = true
@@ -907,10 +953,8 @@ function customizePokemonMarker(marker, item, skipNotification) {
 
     if (notifiedPokemon.indexOf(item['pokemon_id']) > -1 || notifiedRarity.indexOf(item['pokemon_rarity']) > -1) {
         if (!skipNotification) {
-            if (Store.get('playSound')) {
-                audio.play()
-            }
-            sendNotification(getNotifyText(item).fav_title, getNotifyText(item).fav_text, 'static/icons/' + item['pokemon_id'] + '.png', item['latitude'], item['longitude'])
+            playPokemonSound(item['pokemon_id'])
+            sendNotification(notifyText.fav_title, notifyText.fav_text, 'static/icons/' + item['pokemon_id'] + '.png', item['latitude'], item['longitude'])
         }
         if (marker.animationDisabled !== true) {
             marker.setAnimation(google.maps.Animation.BOUNCE)
@@ -921,10 +965,8 @@ function customizePokemonMarker(marker, item, skipNotification) {
         var perfection = getIv(item['individual_attack'], item['individual_defense'], item['individual_stamina'])
         if (notifiedMinPerfection > 0 && perfection >= notifiedMinPerfection) {
             if (!skipNotification) {
-                if (Store.get('playSound')) {
-                    audio.play()
-                }
-                sendNotification(getNotifyText(item).fav_title, getNotifyText(item).fav_text, 'static/icons/' + item['pokemon_id'] + '.png', item['latitude'], item['longitude'])
+                playPokemonSound(item['pokemon_id'])
+                sendNotification(notifyText.fav_title, notifyText.fav_text, 'static/icons/' + item['pokemon_id'] + '.png', item['latitude'], item['longitude'])
             }
             if (marker.animationDisabled !== true) {
                 marker.setAnimation(google.maps.Animation.BOUNCE)
@@ -1199,7 +1241,7 @@ function isTemporaryHidden(pokemonId) {
 function clearStaleMarkers() {
     $.each(mapData.pokemons, function (key, value) {
         if (mapData.pokemons[key]['disappear_time'] < new Date().getTime() ||
-            excludedPokemon.indexOf(mapData.pokemons[key]['pokemon_id']) >= 0 ||
+            getExcludedPokemon().indexOf(mapData.pokemons[key]['pokemon_id']) >= 0 ||
             isTemporaryHidden(mapData.pokemons[key]['pokemon_id'])) {
             if (mapData.pokemons[key].marker.rangeCircle) {
                 mapData.pokemons[key].marker.rangeCircle.setMap(null)
@@ -1212,7 +1254,7 @@ function clearStaleMarkers() {
 
     $.each(mapData.lurePokemons, function (key, value) {
         if (mapData.lurePokemons[key]['lure_expiration'] < new Date().getTime() ||
-            excludedPokemon.indexOf(mapData.lurePokemons[key]['pokemon_id']) >= 0) {
+            getExcludedPokemon().indexOf(mapData.lurePokemons[key]['pokemon_id']) >= 0) {
             mapData.lurePokemons[key].marker.setMap(null)
             delete mapData.lurePokemons[key]
         }
@@ -1317,8 +1359,8 @@ function loadRawData() {
             'oSwLng': oSwLng,
             'oNeLat': oNeLat,
             'oNeLng': oNeLng,
-            'reids': String(reincludedPokemon),
-            'eids': String(excludedPokemon)
+            'reids': String(isShowAllZoom() ? excludedPokemon :  reincludedPokemon),
+            'eids': String(getExcludedPokemon())
         },
         dataType: 'json',
         cache: false,
@@ -1362,7 +1404,7 @@ function processPokemons(i, item) {
     }
 
     if (!(item['encounter_id'] in mapData.pokemons) &&
-        excludedPokemon.indexOf(item['pokemon_id']) < 0 && item['disappear_time'] > Date.now() &&
+        getExcludedPokemon().indexOf(item['pokemon_id']) < 0 && item['disappear_time'] > Date.now() &&
         !isTemporaryHidden(item['pokemon_id'])) {
         // add marker to map and item to dict
         if (item.marker) {
@@ -1625,7 +1667,7 @@ function updateMap() {
 
         reids = result.reids
         if (reids instanceof Array) {
-            ad = reids.filter(function (e) {
+            reincludedPokemon = reids.filter(function (e) {
                 return this.indexOf(e) < 0
             }, reincludedPokemon)
         }
@@ -2131,18 +2173,9 @@ $(function () {
 
         // recall saved mapstyle
         $selectStyle.val(Store.get('map_style')).trigger('change')
-		})
-	
-        $selectIconResolution = $('#pokemon-icons')
- 
-        $selectIconResolution.on('change', function () {
-            Store.set('pokemonIcons', this.value)
-            redrawPokemon(mapData.pokemons)
-            redrawPokemon(mapData.lurePokemons)
-        })
-		
-    $selectIconSize = $('#pokemon-icon-size')
+    })
 
+    $selectIconSize = $('#pokemon-icon-size')
 
     $selectIconSize.select2({
         placeholder: 'Select Icon Size',
@@ -2514,6 +2547,19 @@ $(function () {
 
     $('#sound-switch').change(function () {
         Store.set('playSound', this.checked)
+        var options = {
+            'duration': 500
+        }
+        var criesWrapper = $('#pokemoncries')
+        if (this.checked) {
+            criesWrapper.show(options)
+        } else {
+            criesWrapper.hide(options)
+        }
+    })
+
+    $('#cries-switch').change(function () {
+        Store.set('playCries', this.checked)
     })
 
     $('#geoloc-switch').change(function () {

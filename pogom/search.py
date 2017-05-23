@@ -28,6 +28,7 @@ import copy
 import requests
 import schedulers
 import terminalsize
+import timeit
 
 from datetime import datetime
 from threading import Thread, Lock
@@ -44,7 +45,7 @@ from pgoapi.hash_server import (HashServer, BadHashRequestException,
                                 HashingOfflineException)
 from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
                      WorkerStatus, HashKeys, Account)
-from .utils import now, clear_dict_response
+from .utils import now, clear_dict_response, get_new_api_timestamp
 from .transform import get_new_coords, jitter_location
 from .account import (setup_api, check_login, complete_tutorial, AccountSet,
                       get_player_inventory, get_player_stats, get_player_state)
@@ -83,8 +84,6 @@ def switch_status_printer(display_type, current_page, mainlog,
                 # critical messages).
                 mainlog.handlers[0].setLevel(logging.CRITICAL)
                 display_type[0] = 'workers'
-        elif command.lower() == 'q':
-            os._exit(0)
         elif command.isdigit():
             current_page[0] = int(command)
             mainlog.handlers[0].setLevel(logging.CRITICAL)
@@ -97,6 +96,8 @@ def switch_status_printer(display_type, current_page, mainlog,
         elif command.lower() == 'h':
             mainlog.handlers[0].setLevel(logging.CRITICAL)
             display_type[0] = 'hashstatus'
+        elif command.lower() == 'q':
+            os._exit(0)
 
 
 # Thread to print out the status of each worker.
@@ -279,8 +280,8 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
         # Print the status_text for the current screen.
         status_text.append((
             'Page {}/{}. Page number to switch pages. F to show on hold ' +
-            'accounts. H to show hash status. A to show account stats. '
-            '<ENTER> alone to switch between status and log view. Q to force quit the server.')
+            'accounts. H to show hash status. A to show account stats. Q to force quit the server. '
+            '<ENTER> alone to switch between status and log view')
                            .format(current_page[0], total_pages))
         # Clear the screen.
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -323,6 +324,7 @@ def print_account_stats(rows, thread_status, account_queue,
     rows.append(row_tmpl.format('Status', 'User', 'Warn', 'Level', 'XP', 'Encounters',
                                 'Throws', 'Captures', 'Inventory', 'Spins',
                                 'Walked'))
+
     # Pagination.
     start_line, end_line, total_pages = calc_pagination(len(accounts), 6,
                                                         current_page)
@@ -455,8 +457,8 @@ def worker_status_db_thread(threads_status, name, db_updates_queue):
 
 
 # The main search loop that keeps an eye on the over all process.
-def search_overseer_thread(args, beehive_workers, new_location_queue,
-                           pause_bit, heartb, db_updates_queue, wh_queue):
+def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
+                           db_updates_queue, wh_queue):
 
     log.info('Search overseer starting...')
 
@@ -468,6 +470,8 @@ def search_overseer_thread(args, beehive_workers, new_location_queue,
     key_scheduler = None
     api_version = '0.63.1'
     api_check_time = 0
+    hashkeys_last_upsert = timeit.default_timer()
+    hashkeys_upsert_min_delay = 5.0
 
     '''
     Create a queue of accounts for workers to pull from. When a worker has
@@ -553,54 +557,45 @@ def search_overseer_thread(args, beehive_workers, new_location_queue,
 
     # Create specified number of search_worker_thread.
     log.info('Starting search worker threads...')
-    worker_count = 0
-    beehive_size = len(beehive_workers)
+    for i in range(0, args.workers):
+        log.debug('Starting search worker thread %d...', i)
 
-    for beehive_index in range(0, beehive_size):
-        if beehive_workers[beehive_index] < 1:
-            continue
-        search_items_queue = Queue()
-        # Create the appropriate type of scheduler to handle the search queue.
-        scheduler = schedulers.SchedulerFactory.get_scheduler(
-                                                        args.scheduler,
-                                                        [search_items_queue],
-                                                        threadStatus, args)
+        if i == 0 or (args.beehive and i % args.workers_per_hive == 0):
+            search_items_queue = Queue()
+            # Create the appropriate type of scheduler to handle the search
+            # queue.
+            scheduler = schedulers.SchedulerFactory.get_scheduler(
+                args.scheduler, [search_items_queue], threadStatus, args)
 
-        scheduler_array.append(scheduler)
-        search_items_queue_array.append(search_items_queue)
+            scheduler_array.append(scheduler)
+            search_items_queue_array.append(search_items_queue)
 
-        hive_workers = beehive_workers[beehive_index]
-        while hive_workers > 0:
-            log.debug('Starting search worker thread %d...', worker_count)
+        # Set proxy for each worker, using round robin.
+        proxy_display = 'No'
+        proxy_url = False    # Will be assigned inside a search thread.
 
-            # Set proxy for each worker, using round robin.
-            proxy_display = 'No'
-            proxy_url = False    # Will be assigned inside a search thread.
+        workerId = 'Worker {:03}'.format(i)
+        threadStatus[workerId] = {
+            'type': 'Worker',
+            'message': 'Creating thread...',
+            'success': 0,
+            'fail': 0,
+            'noitems': 0,
+            'skip': 0,
+            'captcha': 0,
+            'username': '',
+            'proxy_display': proxy_display,
+            'proxy_url': proxy_url,
+        }
 
-            workerId = 'Worker {:03}'.format(worker_count)
-            threadStatus[workerId] = {
-                'type': 'Worker',
-                'message': 'Creating thread...',
-                'success': 0,
-                'fail': 0,
-                'noitems': 0,
-                'skip': 0,
-                'captcha': 0,
-                'username': '',
-                'proxy_display': proxy_display,
-                'proxy_url': proxy_url,
-            }
-
-            t = Thread(target=search_worker_thread,
-                       name='search-worker-{}'.format(worker_count),
-                       args=(args, account_queue, account_sets, account_failures,
-                             account_captchas, search_items_queue, pause_bit,
-                             threadStatus[workerId], db_updates_queue,
-                             wh_queue, scheduler, key_scheduler))
-            t.daemon = True
-            t.start()
-            worker_count += 1
-            hive_workers -= 1
+        t = Thread(target=search_worker_thread,
+                   name='search-worker-{}'.format(i),
+                   args=(args, account_queue, account_sets, account_failures,
+                         account_captchas, search_items_queue, pause_bit,
+                         threadStatus[workerId], db_updates_queue,
+                         wh_queue, scheduler, key_scheduler))
+        t.daemon = True
+        t.start()
 
     if not args.no_version_check:
         log.info('Enabling new API force Watchdog.')
@@ -616,6 +611,11 @@ def search_overseer_thread(args, beehive_workers, new_location_queue,
 
     # The real work starts here but will halt on pause_bit.set().
     while True:
+        if (args.hash_key is not None and
+                (hashkeys_last_upsert + hashkeys_upsert_min_delay)
+                <= timeit.default_timer()):
+            upsertKeys(args.hash_key, key_scheduler, db_updates_queue)
+            hashkeys_last_upsert = timeit.default_timer()
 
         odt_triggered = (args.on_demand_timeout > 0 and
                          (now() - args.on_demand_timeout) > heartb[0])
@@ -627,6 +627,11 @@ def search_overseer_thread(args, beehive_workers, new_location_queue,
         while pause_bit.is_set():
             for i in range(0, len(scheduler_array)):
                 scheduler_array[i].scanning_paused()
+            # API Watchdog - Continue to check API version.
+            if not args.no_version_check and not odt_triggered:
+                api_check_time = check_forced_version(args, api_version,
+                                                      api_check_time,
+                                                      pause_bit)
             time.sleep(1)
 
         # If a new location has been passed to us, get the most recent one.
@@ -642,15 +647,11 @@ def search_overseer_thread(args, beehive_workers, new_location_queue,
 
             locations = generate_hive_locations(
                 current_location, step_distance,
-                args.step_limit, beehive_size)
+                args.step_limit, len(scheduler_array))
 
-            scheduler_index = 0
-            for i in range(0, beehive_size):
-                if beehive_workers[i] > 0:
-                    scheduler_array[scheduler_index].location_changed(
-                                                        locations[i],
-                                                        db_updates_queue)
-                    scheduler_index += 1
+            for i in range(0, len(scheduler_array)):
+                scheduler_array[i].location_changed(locations[i],
+                                                    db_updates_queue)
 
         # If there are no search_items_queue either the loop has finished or
         # it's been cleared above.  Either way, time to fill it back up.
@@ -704,10 +705,9 @@ def search_overseer_thread(args, beehive_workers, new_location_queue,
                              scheduler_array[0])
 
         # API Watchdog - Check if Niantic forces a new API.
-        if not args.no_version_check:
+        if not args.no_version_check and not odt_triggered:
             api_check_time = check_forced_version(args, api_version,
-                                                  api_check_time, pause_bit,
-                                                  odt_triggered)
+                                                  api_check_time, pause_bit)
 
         # Now we just give a little pause here.
         time.sleep(1)
@@ -1063,9 +1063,6 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                 if first_login:
                     first_login = False
 
-                    # Get warning/banned flags and tutorial state.
-                    account.update(get_player_state(api))
-
                     # Check tutorial completion.
                     if args.complete_tutorial:
                         log.debug('Checking tutorial state for %s.',
@@ -1088,7 +1085,8 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
 
                 # Make the actual request.
                 scan_date = datetime.utcnow()
-                response_dict = map_request(api, step_location, args.no_jitter)
+                response_dict = map_request(api, account,
+                                            step_location, args.no_jitter)
                 status['last_scan_date'] = datetime.utcnow()
 
                 # Record the time and the place that the worker made the
@@ -1106,12 +1104,8 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     time.sleep(scheduler.delay(status['last_scan_date']))
                     continue
 
-                # Update player account stats.
-                account.update(get_player_stats(response_dict))
-
                 # Extract player inventory
-                inventory = get_player_inventory(response_dict)
-                account['inventory'] = inventory
+                inventory = account['inventory']
 
                 # Got the response, check for captcha, parse it out, then send
                 # todo's to db/wh queues.
@@ -1124,7 +1118,8 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         # Make another request for the same location
                         # since the previous one was captcha'd.
                         scan_date = datetime.utcnow()
-                        response_dict = map_request(api, step_location,
+                        response_dict = map_request(api, account,
+                                                    step_location,
                                                     args.no_jitter)
                     elif captcha is not None:
                         account_queue.task_done()
@@ -1228,7 +1223,8 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                                     current_gym, len(gyms_to_update),
                                     step_location[0], step_location[1])
                             time.sleep(random.random() + 2)
-                            response = gym_request(api, step_location, gym)
+                            response = gym_request(api, account, step_location,
+                                                   gym)
 
                             # Make sure the gym was in range. (Sometimes the
                             # API gets cranky about gyms that are ALMOST 1km
@@ -1291,15 +1287,6 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                               key_instance['remaining'],
                               key_instance['maximum'])
 
-                    # Prepare hashing keys to be sent to the db. But only
-                    # sent latest updates of the 'peak' value per key.
-                    hashkeys = {}
-                    hashkeys[key] = key_instance
-                    hashkeys[key]['key'] = key
-                    hashkeys[key]['peak'] = max(key_instance['peak'],
-                                                HashKeys.getStoredPeak(key))
-                    dbq.put((HashKeys, hashkeys))
-
                 # Delay the desired amount after "scan" completion.
                 delay = scheduler.delay(status['last_scan_date'])
 
@@ -1327,7 +1314,20 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
             time.sleep(args.scan_delay)
 
 
-def map_request(api, position, no_jitter=False):
+def upsertKeys(keys, key_scheduler, db_updates_queue):
+    # Prepare hashing keys to be sent to the db. But only
+    # sent latest updates of the 'peak' value per key.
+    hashkeys = {}
+    for key in keys:
+        key_instance = key_scheduler.keys[key]
+        hashkeys[key] = key_instance
+        hashkeys[key]['key'] = key
+        hashkeys[key]['peak'] = max(key_instance['peak'],
+                                    HashKeys.getStoredPeak(key))
+    db_updates_queue.put((HashKeys, hashkeys))
+
+
+def map_request(api, account, position, no_jitter=False):
     # Create scan_location to send to the api based off of position, because
     # tuples aren't mutable.
     if no_jitter:
@@ -1349,11 +1349,19 @@ def map_request(api, position, no_jitter=False):
                             cell_id=cell_ids)
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
         req.get_buddy_walked()
         response = req.call()
+
+        account['last_timestamp_ms'] = get_new_api_timestamp(response)
+
+        # Update player account stats.
+        account.update(get_player_stats(response))
+
+        # Extract player inventory
+        account['inventory'] = get_player_inventory(response)
+
         response = clear_dict_response(response, True)
         return response
 
@@ -1367,7 +1375,7 @@ def map_request(api, position, no_jitter=False):
         return False
 
 
-def gym_request(api, position, gym):
+def gym_request(api, account, position, gym):
     try:
         log.debug('Getting details for gym @ %f/%f (%fkm away)',
                   gym['latitude'], gym['longitude'],
@@ -1380,14 +1388,14 @@ def gym_request(api, position, gym):
                             gym_longitude=gym['longitude'])
         req.check_challenge()
         req.get_hatched_eggs()
-        req.get_inventory()
+        req.get_inventory(last_timestamp_ms=account['last_timestamp_ms'])
         req.check_awarded_badges()
-        req.download_settings()
         req.get_buddy_walked()
-        x = req.call()
-        x = clear_dict_response(x)
-        # Print pretty(x).
-        return x
+        response = req.call()
+
+        account['last_timestamp_ms'] = get_new_api_timestamp(response)
+        response = clear_dict_response(response)
+        return response
 
     except Exception as e:
         log.warning('Exception while downloading gym details: %s', repr(e))
@@ -1424,9 +1432,9 @@ def stat_delta(current_status, last_status, stat_name):
     return current_status.get(stat_name, 0) - last_status.get(stat_name, 0)
 
 
-def check_forced_version(args, api_version, api_check_time, pause_bit,
-                         odt_triggered):
+def check_forced_version(args, api_version, api_check_time, pause_bit):
     if int(time.time()) > api_check_time:
+        log.debug("Checking forced API version.")
         api_check_time = int(time.time()) + args.version_check_interval
         forced_api = get_api_version(args)
 
@@ -1451,9 +1459,9 @@ def check_forced_version(args, api_version, api_check_time, pause_bit,
             else:
                 # API check was successful and
                 # installed API version is newer or equal forced API.
-                # Continue scanning if on_demand_timout isn't triggered.
-                if not odt_triggered:
-                    pause_bit.clear()
+                # Continue scanning.
+                log.debug("API check was successful. Continue scanning.")
+                pause_bit.clear()
 
         except ValueError as e:
             # Unknown version format. Pause scanning as well.
